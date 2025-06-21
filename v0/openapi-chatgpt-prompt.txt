@@ -1,0 +1,16 @@
+Generated ./openapi-chatgpt.yml by giving ChatGPT the below prompt: (the rest of this file)
+
+Given the following pseudocode + Typescript API spec, for Talkyard (open-source forum software), please write an OpenAPI 3.1 spec, as best you can. Some endpoints are shown mainly via pseudo code sending a request to the endpoint — please generate OpenAPI endpoints for those too. Consider adding a type discriminator field (or tagged union field, as they're called in Typescript), where needed, if that makes the spec  simpler and shorter. Do consider the text in the comments! Try to copy it to OpenAPI "description" fields.
+
+Note that the responses are basically always lists. Also the Get API returns a list of things — since one can specify many ids or, say, usernames, in the request.
+
+Prioritize avoiding combinatorial explosions, rather than creating very specific response types. For example, the Get API returns a list of things, but it's ok if the list contains generic things, rather than one of many [types of lists each containing only things of one type] — the latter would result in a combinatorial explosion. It's ok to assume that the caller knows that "Since I asked for users, only users will be in the API response, although the OpenAPI type system doesn't make this visible".
+
+Create component: schemas: ... rather than inlining all types in the endpoints directly. (That's why there are Typescript interfaces.) Ask if something is unclear, before you start. 
+
+Here: 
+
+[copy-pasting the contents of pub-api-2-ai.ts, but only with the Get and Lits queries,
+otherwise ChatGPT said it's too much. Then I continued chatting with the AI and
+added pseudocode for the Query and Search endpoints too.]
+

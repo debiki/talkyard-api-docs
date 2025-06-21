@@ -1,0 +1,1319 @@
+openapi: 3.1.0
+info:
+  title: Talkyard API
+  version: v0
+  description: |
+    An OpenAPI 3.1 specification for the Talkyard open-source forum software API.
+    This spec is based on the provided Typescript types and pseudocode.
+servers:
+  - url: https://{origin}/-/v0
+    variables:
+      origin:
+        default: talkyard.example.com
+        description: The base URL of the Talkyard instance.
+paths:
+  /get:
+    post:
+      summary: Get specific things by reference
+      description: |
+        When you know precisely what you want, you can use a Get Query, to look up
+        directly by id / url / username / something. For each lookup key you specify,
+        you'll get back exactly one thing, or null.
+        Tech details: Looks up by database primary key. So you know you'll get 1 or 0.
+      operationId: getThings
+      requestBody:
+        description: A Get Query to fetch one or more specific items.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetQueryApiRequest'
+      responses:
+        '200':
+          description: OK. The response contains a list of found things or errors, in the same order as the requested references.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  origin:
+                    type: string
+                    format: uri
+                    description: The origin URL of the Talkyard instance, useful for constructing full URLs from relative paths.
+                  thingsOrErrs:
+                    type: array
+                    description: One item for each getRefs[] item, in the same order. An item can be the found thing, an error object, or null if not found.
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/ThingFound'
+                        - $ref: '#/components/schemas/ErrCodeMsg'
+                        - type: 'null'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /list:
+    post:
+      summary: List things based on filters
+      description: |
+        To fetch a list of things, e.g. the most recent comments on a blog, the most recent new pages in a forum, or newest users.
+        List Queries are comparatively fast — they lookup things directly, via indexes in the PostgreSQL database. However they cannot do full text search — for that, you need a Search Query.
+      operationId: listThings
+      requestBody:
+        description: A List Query to fetch a list of items based on various criteria.
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ListQueryApiRequest'
+                - $ref: '#/components/schemas/ContinueListQueryApiRequest'
+      responses:
+        '200':
+          description: OK. A list of things matching the query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListQueryResults'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /search:
+    post:
+      summary: Search for things using full-text search
+      description: |
+        Finds things via the full text search / faceted search database — that is, ElasticSearch (currently), not PostgreSQL.
+      operationId: searchThings
+      requestBody:
+        description: A Search Query to find items using full-text search.
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/SearchQueryApiRequest'
+                - $ref: '#/components/schemas/ContinueSearchQueryApiRequest'
+      responses:
+        '200':
+          description: OK. A list of things matching the search query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchQueryResults'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /query:
+    post:
+      summary: Run multiple queries in a single request
+      description: Lets you send many Get, List, or Search queries in a single http request.
+      operationId: runMultipleQueries
+      requestBody:
+        description: An array of Get, List, or Search queries to run.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryApiRequest'
+      responses:
+        '200':
+          description: OK. The response is a container for multiple results, one for each query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManyResults'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /do:
+    post:
+      summary: Perform actions
+      description: Perform one or more actions, like creating pages, posting comments, or voting.
+      operationId: doActions
+      requestBody:
+        description: A set of actions to perform.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoApiRequest'
+      responses:
+        '200':
+          description: OK. The response contains a list of results, one for each action performed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManyResults'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+components:
+  schemas:
+    # --- Base & Common Schemas ---
+    ApiRequest:
+      type: object
+      properties:
+        pretty:
+          type: boolean
+          description: If true, the JSON response will be pretty-printed.
+    ApiTask:
+      type: object
+      description: An API request can include one or many things for the server to do — many tasks.
+    ApiErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ResponseError'
+    ResponseError:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ErrCodeMsg'
+      properties:
+        httpStatusCode:
+          type: integer
+    ErrCodeMsg:
+      type: object
+      properties:
+        errCode:
+          type: string
+        errMsg:
+          type: string
+      required:
+        - errCode
+        - errMsg
+    ManyResults:
+      type: object
+      description: A container for multiple results, used when multiple queries or actions are sent in a single request.
+      properties:
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/OkResult'
+              - $ref: '#/components/schemas/ErrorResult'
+              - $ref: '#/components/schemas/ManyResults' # For nested actions
+              - $ref: '#/components/schemas/ListQueryResults'
+              - $ref: '#/components/schemas/SearchQueryResults'
+    OkResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: true
+      required:
+        - ok
+    ErrorResult:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrCodeMsg'
+      required:
+        - error
+    # --- IDs and References ---
+    Ref:
+      type: string
+      description: A generic reference string, often prefixed (e.g., 'pageid:123', 'emgurl:https://...').
+    ParticipantId:
+      type: string
+    PatRef:
+      type: string
+      description: A reference to a participant (user, group, or guest).
+    PageRef:
+      type: string
+      description: A reference to a page (e.g. 'pageid:112233', 'refid:something', 'emgurl:https://...').
+    PostRef:
+      type: string
+      description: A reference to a post.
+    CategoryRef:
+      type: string
+      description: A reference to a category (e.g. 'catid:112233').
+    TagRef:
+      type: string
+      description: A reference to a tag type.
+    BadgeRef:
+      type: string
+      description: A reference to a badge.
+    # --- Enums ---
+    FindWhat:
+      type: string
+      description: The different things Search Queries and List Queries can find.
+      enum:
+        - Events
+        - Pages
+        - Posts
+        - Members
+        - Pats
+        - Invites
+        - EmailsSent
+        - Tags
+        - Categories
+        - Badges
+    WhatThing:
+      type: string
+      description: The type discriminator for a 'Thing' object.
+      enum:
+        - Event
+        - Page
+        - Post
+        - Pat
+    PageSortOrder:
+      type: string
+      enum:
+        - PopularFirst
+        - ActiveFirst
+        - NewestFirst
+    PageTypeSt:
+      type: string
+      enum:
+        - Question
+        - Problem
+        - Idea
+        - Discussion
+    PageDoingStatusSt:
+      type:
+        - 'string'
+        - 'null'
+      enum:
+        - null
+        - Planned
+        - Doing
+        - Done
+    PageClosedStatusSt:
+      type:
+        - 'string'
+        - 'null'
+      enum:
+        - null
+        - Closed
+        - Locked
+        - Frozen
+    PageDeletedStatusSt:
+      type:
+        - 'string'
+        - 'null'
+      enum:
+        - null
+        - Deleted
+        - HardDeleted
+    EventSortOrder:
+      type: string
+      enum:
+        - NewestFirst
+        - OldestFirst
+    EventType:
+      type: string
+      enum:
+        - PageCreated
+        - PageUpdated
+        - PostCreated
+        - PostUpdated
+        - PatCreated
+        - PatUpdated
+    # --- Thing Schemas ---
+    Thing:
+      type: object
+      properties:
+        what:
+          $ref: '#/components/schemas/WhatThing'
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+          description: Can be left out if looking up one specific thing, as the caller already knows its id.
+    ThingFound:
+      description: A union of all possible things that can be found by a query.
+      oneOf:
+        - $ref: '#/components/schemas/PageFound'
+        - $ref: '#/components/schemas/PageListed'
+        - $ref: '#/components/schemas/PostListed'
+        - $ref: '#/components/schemas/Event_'
+        - $ref: '#/components/schemas/TyPat'
+        - $ref: '#/components/schemas/TagFound'
+        - $ref: '#/components/schemas/CategoryFound'
+      discriminator:
+        propertyName: what
+        mapping:
+          Event: '#/components/schemas/Event_'
+          Page: '#/components/schemas/PageListed' # Using PageListed as the common denominator
+          Post: '#/components/schemas/PostListed'
+          Pat: '#/components/schemas/TyPat'
+    # --- Participant (Pat) Schemas ---
+    TyPat:
+      type: object
+      description: Represents a participant (user, group, or guest).
+      properties:
+        what:
+          type: string
+          const: 'Pat'
+        id:
+          $ref: '#/components/schemas/PatRef'
+        ssoId:
+          type: string
+        extId:
+          type: string
+        username:
+          type: string
+        fullName:
+          type: string
+        tinyAvatarUrl:
+          type: string
+          format: uri
+        isGroup:
+          type: boolean
+        isGuest:
+          type: boolean
+      required:
+        - id
+    # --- Page Schemas ---
+    PageOptFields:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Thing'
+      properties:
+        what:
+          type: string
+          const: 'Page'
+        title:
+          type: string
+        urlPath:
+          type: string
+          description: Prefix with the origin (included in the response) to get the full URL.
+        excerpt:
+          type: string
+        author:
+          $ref: '#/components/schemas/TyPat'
+        categoriesMainFirst:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryFound'
+        numOpLikeVotes:
+          type: integer
+        numTotRepliesVisible:
+          type: integer
+    PageFoundOrListed:
+      type: object
+      description: Common fields for a page that is found or listed.
+      allOf:
+        - $ref: '#/components/schemas/PageOptFields'
+      properties:
+        id:
+          $ref: '#/components/schemas/PageRef'
+        title:
+          type: string
+        urlPath:
+          type: string
+      required:
+        - id
+        - title
+        - urlPath
+    PageFound:
+      type: object
+      description: A page found by a query, including its posts.
+      allOf:
+        - $ref: '#/components/schemas/PageFoundOrListed'
+      properties:
+        postsFound:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostFound'
+      required:
+        - postsFound
+    PageListed:
+      type: object
+      description: A page as it appears in a list, without detailed post information.
+      allOf:
+        - $ref: '#/components/schemas/PageFoundOrListed'
+    # --- Post Schemas ---
+    PostFoundOrListed:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Thing'
+      properties:
+        what:
+          type: string
+          const: 'Post'
+        isPageTitle:
+          type: boolean
+        isPageBody:
+          type: boolean
+        author:
+          $ref: '#/components/schemas/TyPat'
+    PostFound:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PostFoundOrListed'
+      properties:
+        htmlWithMarks:
+          type: array
+          items:
+            type: string
+          description: |
+            Content with <mark> tags and html escapes, like:
+            ["When you want to <mark>climb</mark> a tall &amp; exciting <mark>tree</tree> then", ... ].
+      required:
+        - htmlWithMarks
+    PostListed:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PostFoundOrListed'
+      properties:
+        id:
+          type: integer
+        nr:
+          type: integer
+        parentNr:
+          type: integer
+        pageId:
+          $ref: '#/components/schemas/PageRef'
+        pageTitle:
+          type: string
+        urlPath:
+          type: string
+        author:
+          $ref: '#/components/schemas/TyPat'
+        approvedHtmlSanitized:
+          type: string
+      required:
+        - id
+        - nr
+        - pageId
+        - pageTitle
+        - urlPath
+        - author
+    PostWrappedInPage:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PostFoundOrListed'
+      properties:
+        id:
+          type: integer
+        nr:
+          type: integer
+        parentNr:
+          type: integer
+        author:
+          $ref: '#/components/schemas/TyPat'
+        approvedHtmlSanitized:
+          type: string
+      required:
+        - id
+        - nr
+        - approvedHtmlSanitized
+    # --- Category & Tag Schemas ---
+    CategoryFound:
+      type: object
+      properties:
+        categoryId:
+          $ref: '#/components/schemas/CategoryRef'
+        name:
+          type: string
+        urlPath:
+          type: string
+      required:
+        - categoryId
+        - name
+        - urlPath
+    TagFound:
+      type: object
+      description: Represents a found tag. Details are not fully implemented in the source spec.
+    TagAnyVal:
+      type: object
+      description: A tag, which can optionally have a value of different types.
+      properties:
+        tagType:
+          $ref: '#/components/schemas/TagRef'
+        valType:
+          type: string
+          enum:
+            - Int32
+            - Flt64
+            - StrKwd
+        valInt32:
+          type: integer
+          format: int32
+        valFlt64:
+          type: number
+          format: double
+        valStr:
+          type: string
+      required:
+        - tagType
+      discriminator:
+        propertyName: valType
+      oneOf:
+        - allOf:
+          - $ref: '#/components/schemas/TagAnyVal'
+          - type: object
+            properties:
+              valType:
+                type: string
+                const: Int32
+            required:
+             - valInt32
+        - allOf:
+          - $ref: '#/components/schemas/TagAnyVal'
+          - type: object
+            properties:
+              valType:
+                type: string
+                const: Flt64
+            required:
+             - valFlt64
+        - allOf:
+          - $ref: '#/components/schemas/TagAnyVal'
+          - type: object
+            properties:
+              valType:
+                type: string
+                const: StrKwd
+            required:
+             - valStr
+        - $ref: '#/components/schemas/TagAnyVal' # No valType case
+    # --- Event Schemas ---
+    Event_:
+      type: object
+      description: An event describes something that happened in Talkyard, e.g. a page was created, or comment posted.
+      properties:
+        what:
+          type: string
+          const: 'Event'
+        id:
+          type: integer
+        when:
+          type: integer
+          description: Timestamp in milliseconds.
+        eventType:
+          $ref: '#/components/schemas/EventType'
+        eventData:
+          type: object
+      required:
+        - id
+        - when
+        - eventType
+        - eventData
+      discriminator:
+        propertyName: eventType
+        mapping:
+          PageCreated: '#/components/schemas/PageCreatedEvent'
+          PageUpdated: '#/components/schemas/PageUpdatedEvent'
+          PostCreated: '#/components/schemas/PostCreatedEvent'
+          PostUpdated: '#/components/schemas/PostUpdatedEvent'
+          PatCreated: '#/components/schemas/PatCreatedEvent'
+          PatUpdated: '#/components/schemas/PatUpdatedEvent'
+    PageCreatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/Event_'
+        - type: object
+          properties:
+            eventType:
+              const: 'PageCreated'
+            eventData:
+              type: object
+              properties:
+                page:
+                  allOf:
+                    - $ref: '#/components/schemas/EventPageData'
+                    - type: object
+                      properties:
+                        posts:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/PostWrappedInPage'
+                      required:
+                        - posts
+              required:
+                - page
+    PageUpdatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/Event_'
+        - type: object
+          properties:
+            eventType:
+              const: 'PageUpdated'
+            eventData:
+              type: object
+              properties:
+                page:
+                  $ref: '#/components/schemas/EventPageData'
+              required:
+                - page
+    PostCreatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/Event_'
+        - type: object
+          properties:
+            eventType:
+              const: 'PostCreated'
+            eventData:
+              type: object
+              properties:
+                post:
+                  $ref: '#/components/schemas/PostListed'
+              required:
+                - post
+    PostUpdatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/Event_'
+        - type: object
+          properties:
+            eventType:
+              const: 'PostUpdated'
+            eventData:
+              type: object
+              properties:
+                post:
+                  $ref: '#/components/schemas/PostListed'
+              required:
+                - post
+    PatCreatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/Event_'
+        - type: object
+          properties:
+            eventType:
+              const: 'PatCreated'
+            eventData:
+              type: object
+              properties:
+                pat:
+                  $ref: '#/components/schemas/TyPat'
+              required:
+                - pat
+    PatUpdatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/Event_'
+        - type: object
+          properties:
+            eventType:
+              const: 'PatUpdated'
+            eventData:
+              type: object
+              properties:
+                pat:
+                  $ref: '#/components/schemas/TyPat'
+              required:
+                - pat
+    EventPageData:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/PageRef'
+        title:
+          type: string
+        urlPath:
+          type: string
+        pageType:
+          $ref: '#/components/schemas/PageTypeSt'
+        answerPostId:
+          $ref: '#/components/schemas/PostRef'
+        doingStatus:
+          $ref: '#/components/schemas/PageDoingStatusSt'
+        closedStatus:
+          $ref: '#/components/schemas/PageClosedStatusSt'
+        deletedStatus:
+          $ref: '#/components/schemas/PageDeletedStatusSt'
+        categoriesMainFirst:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryFound'
+      required:
+        - id
+        - title
+        - urlPath
+        - pageType
+        - categoriesMainFirst
+    # --- Fields to Include ---
+    InclFields:
+      type: object
+      description: Base interface for specifying which fields to include in the response.
+    InclPageFields:
+      type: object
+      description: Specifies which page fields to include in the API response.
+      allOf:
+        - $ref: '#/components/schemas/InclFields'
+      properties:
+        id:
+          type: boolean
+        refId:
+          type: boolean
+        numOpLikeVotes:
+          type: boolean
+        numOpDoItVotes:
+          type: boolean
+        numOpDoNotVotes:
+          type: boolean
+        numTotRepliesVisible:
+          type: boolean
+        title:
+          type: boolean
+        origPost:
+          type: boolean
+          description: Unimplemented!
+    InclPatFields:
+      type: object
+      description: Not implemented. Specifies which participant fields to include.
+      allOf:
+        - $ref: '#/components/schemas/InclFields'
+      properties:
+        id:
+          type: boolean
+        refId:
+          type: boolean
+        ssoId:
+          type: boolean
+        fullName:
+          type: boolean
+        username:
+          type: boolean
+        isGuest:
+          type: boolean
+    # --- GET API ---
+    GetQueryApiRequest:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - $ref: '#/components/schemas/GetQueryApiTask'
+    GetQueryApiTask:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiTask'
+      properties:
+        getQuery:
+          $ref: '#/components/schemas/GetQuery'
+      required:
+        - getQuery
+    GetQuery:
+      type: object
+      discriminator:
+        propertyName: getWhat
+        mapping:
+          Pages: '#/components/schemas/GetPagesQuery'
+          Pats: '#/components/schemas/GetPatsQuery'
+      properties:
+        getWhat:
+          $ref: '#/components/schemas/FindWhat'
+        getRefs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ref'
+        inclFields:
+          $ref: '#/components/schemas/InclFields'
+      required:
+        - getWhat
+        - getRefs
+    GetPagesQuery:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/GetQuery'
+        - type: object
+          properties:
+            getWhat:
+              type: string
+              const: 'Pages'
+            getRefs:
+              type: array
+              items:
+                $ref: '#/components/schemas/PageRef'
+            inclFields:
+              $ref: '#/components/schemas/InclPageFields'
+    GetPatsQuery:
+      type: object
+      description: Not implemented.
+      allOf:
+        - $ref: '#/components/schemas/GetQuery'
+        - type: object
+          properties:
+            getWhat:
+              type: string
+              const: 'Pats'
+            getRefs:
+              type: array
+              items:
+                $ref: '#/components/schemas/PatRef'
+            inclFields:
+              $ref: '#/components/schemas/InclPatFields'
+    # --- LIST API ---
+    ListQueryApiRequest:
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - $ref: '#/components/schemas/ListQueryApiTask'
+    ContinueListQueryApiRequest:
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - type: object
+          properties:
+            continueAtScrollCursor:
+              type: object # Unimplemented
+            limit:
+              type: integer
+    ListQueryApiTask:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiTask'
+      properties:
+        listQuery:
+          $ref: '#/components/schemas/ListQuery'
+        limit:
+          type: integer
+      required:
+        - listQuery
+    ListQuery:
+      type: object
+      discriminator:
+        propertyName: listWhat
+      properties:
+        listWhat:
+          $ref: '#/components/schemas/FindWhat'
+        inclFields:
+          $ref: '#/components/schemas/InclFields'
+        exactPrefix:
+          type: string
+          description: A prefix to match, e.g., for username autocompletion.
+        lookWhere:
+          $ref: '#/components/schemas/LookWhere'
+        filter:
+          $ref: '#/components/schemas/QueryFilter'
+        sortOrder:
+          oneOf:
+            - $ref: '#/components/schemas/PageSortOrder'
+            - $ref: '#/components/schemas/EventSortOrder'
+        limit:
+          type: integer
+      required:
+        - listWhat
+    LookWhere:
+      type: object
+      description: In which text fields or content sections to look.
+      properties:
+        usernames:
+          type: boolean
+        fullNames:
+          type: boolean
+        emailAddresses:
+          type: boolean
+        inGroups:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatRef'
+        withBadges:
+          type: array
+          items:
+            $ref: '#/components/schemas/BadgeRef'
+        aboutText:
+          type: boolean
+        titleText:
+          type: boolean
+        bodyText:
+          type: boolean
+        repliesText:
+          type: boolean
+        pageText:
+          type: boolean
+        pageTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageTypeSt'
+        inPages:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageRef'
+        inCategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryRef'
+        withTags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagRef'
+        writtenBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatRef'
+    QueryFilter:
+      $ref: '#/components/schemas/PageFilter'
+    PageFilter:
+      type: object
+      properties:
+        isDeleted:
+          type: boolean
+          default: false
+        isOpen:
+          type: boolean
+        isAuthorWaiting:
+          type: boolean
+        pageType:
+          type: object
+          properties:
+            _in:
+              type: array
+              items:
+                $ref: '#/components/schemas/PageTypeSt'
+    ListQueryResults:
+      type: object
+      properties:
+        origin:
+          type: string
+          format: uri
+        thingsFound:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThingFound'
+        scrollCursor:
+          type: object # Unimplemented
+    # --- SEARCH API ---
+    SearchQueryApiRequest:
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - $ref: '#/components/schemas/SearchQueryApiTask'
+    ContinueSearchQueryApiRequest:
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - type: object
+          properties:
+            continueAtScrollCursor:
+              type: object # Unimplemented
+            limit:
+              type: integer
+    SearchQueryApiTask:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiTask'
+      properties:
+        searchQuery:
+          $ref: '#/components/schemas/SearchQuery_'
+        limit:
+          type: integer
+      required:
+        - searchQuery
+    SearchQuery_:
+      oneOf:
+        - $ref: '#/components/schemas/SinglSearchQuery'
+        - type: array # CompoundSearchQuery is an array of SinglSearchQuery
+          items:
+            $ref: '#/components/schemas/SinglSearchQuery'
+    SinglSearchQuery:
+      type: object
+      properties:
+        freetext:
+          type: string
+          description: Free-form text for the server to interpret and search on.
+        findWhat:
+          $ref: '#/components/schemas/FindWhat'
+        lookWhere:
+          $ref: '#/components/schemas/LookWhere'
+    SearchQueryResults:
+      type: object
+      properties:
+        origin:
+          type: string
+          format: uri
+        thingsFound:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThingFound'
+        scrollCursor:
+          type: object # Unimplemented
+    # --- QUERY API ---
+    QueryApiRequest:
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - $ref: '#/components/schemas/ManyQueriesApiTask'
+    ManyQueriesApiTask:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiTask'
+      properties:
+        runQueries:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryApiTask'
+      required:
+        - runQueries
+    QueryApiTask:
+      oneOf:
+        - $ref: '#/components/schemas/GetQueryApiTask'
+        - $ref: '#/components/schemas/ListQueryApiTask'
+        - $ref: '#/components/schemas/SearchQueryApiTask'
+    # --- DO API ---
+    DoApiRequest:
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - $ref: '#/components/schemas/DoActionsApiTask'
+    DoActionsApiTask:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiTask'
+      properties:
+        doActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+      required:
+        - doActions
+    Action:
+      type: object
+      description: Represents a single action to be performed.
+      properties:
+        asWho:
+          type: string
+          description: The user or entity performing the action. e.g., 'sysbot', 'tyid:_', 'extid:_', 'ssoid:_', 'username:_'.
+        doWhat:
+          type: string
+          enum:
+            - UpsertType
+            - CreatePage
+            - CreateComment
+            - DeletePosts
+            - SetVote
+            - SetNotfLevel
+            # Incomplete based on example
+            - CreateUser
+            - AddUserToGroup
+            - MovePages
+        doWhy:
+          type: string
+          description: Optional description for the audit log.
+        doHow:
+          type: object
+          description: Parameters specific to the action type.
+      required:
+        - asWho
+        - doWhat
+        - doHow
+      discriminator:
+        propertyName: doWhat
+        mapping:
+          UpsertType: '#/components/schemas/UpsertTypeAction'
+          CreatePage: '#/components/schemas/CreatePageAction'
+          CreateComment: '#/components/schemas/CreateCommentAction'
+          DeletePosts: '#/components/schemas/DeletePostsAction'
+          SetVote: '#/components/schemas/SetVoteAction'
+          SetNotfLevel: '#/components/schemas/SetNotfLevelAction'
+    # --- Action Implementations ---
+    UpsertTypeAction:
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: UpsertType
+            doHow:
+              $ref: '#/components/schemas/UpsertTypeParams'
+    UpsertTypeParams:
+      type: object
+      properties:
+        refId:
+          $ref: '#/components/schemas/Ref'
+        kindOfType:
+          type: string
+          const: 'TagType'
+        dispName:
+          type: string
+        urlSlug:
+          type: string
+        valueType:
+          type: string
+          enum:
+            - Int32
+            - Flt64
+            - StrKwd
+      required:
+        - kindOfType
+        - dispName
+    SetVoteAction:
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: SetVote
+            doHow:
+              $ref: '#/components/schemas/SetVoteParams'
+    SetVoteParams:
+      type: object
+      properties:
+        voteType:
+          type: string
+          const: Like
+        howMany:
+          type: integer
+          enum: [0, 1]
+          description: 0 clears any votes (by the same person), 1 adds a vote.
+        whatPage:
+          $ref: '#/components/schemas/PageRef'
+        postNr:
+          type: integer
+          description: Defaults to the page's original post.
+        whatPost:
+          $ref: '#/components/schemas/PostRef'
+      required:
+        - voteType
+        - howMany
+    SetNotfLevelAction:
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: SetNotfLevel
+            doHow:
+              type: object
+              properties:
+                toLevel:
+                  type: integer
+                whatPages:
+                  type: array
+                  items:
+                    type: object
+                    oneOf:
+                      - properties:
+                          pageId:
+                            type: string
+                      - properties:
+                          inCategoryId:
+                            $ref: '#/components/schemas/CategoryRef'
+              required:
+                - toLevel
+                - whatPages
+    CreatePageAction:
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: CreatePage
+            doHow:
+              $ref: '#/components/schemas/CreatePageParams'
+    CreatePageParams:
+      allOf:
+        - $ref: '#/components/schemas/CreatePostParams'
+        - type: object
+          properties:
+            title:
+              type: string
+            pageType:
+              $ref: '#/components/schemas/PageTypeSt'
+            inCategory:
+              $ref: '#/components/schemas/CategoryRef'
+          required:
+            - title
+            - pageType
+            - inCategory
+    CreateCommentAction:
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: CreateComment
+            doHow:
+              $ref: '#/components/schemas/CreateCommentParams'
+    CreateCommentParams:
+      allOf:
+        - $ref: '#/components/schemas/CreatePostParams'
+        - type: object
+          properties:
+            parentNr:
+              type: integer
+            whatPage:
+              $ref: '#/components/schemas/PageRef'
+          required:
+            - whatPage
+    CreatePostParams:
+      type: object
+      properties:
+        refId:
+          $ref: '#/components/schemas/Ref'
+        bodySrc:
+          type: string
+        bodyFmt:
+          type: string
+          const: CommonMark
+        withTags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagAnyVal'
+      required:
+        - bodySrc
+        - bodyFmt
+    DeletePostsAction:
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: DeletePosts
+            doHow:
+              $ref: '#/components/schemas/DeletePostsParams'
+    DeletePostsParams:
+      type: object
+      properties:
+        whatPost:
+          $ref: '#/components/schemas/PostRef'
+        postsCreatedBy:
+          $ref: '#/components/schemas/PatRef'
+        postsCreatedAfter:
+          type: integer
+          description: Timestamp in milliseconds.
+  responses:
+    BadRequest:
+      description: Bad Request. The request was malformed or contained invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+        text/plain:
+          schema:
+            type: string
+    Unauthorized:
+      description: Unauthorized. Authentication is required and has failed or has not yet been provided.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+        text/plain:
+          schema:
+            type: string
+    Forbidden:
+      description: Forbidden. The authenticated user does not have permission to perform this action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+        text/plain:
+          schema:
+            type: string
+    TooManyRequests:
+      description: Too Many Requests. The user has sent too many requests in a given amount of time.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+        text/plain:
+          schema:
+            type: string
+

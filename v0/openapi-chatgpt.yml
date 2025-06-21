@@ -1,0 +1,389 @@
+openapi: 3.1.0
+info:
+  title: Talkyard API
+  version: v0
+  description: |
+    Talkyard API specification based on TypeScript definitions and pseudocode.
+    Supports getting, listing, searching, querying, and performing actions on Talkyard resources.
+
+paths:
+  /-/v0/get:
+    post:
+      summary: Get specific resources by ID or reference
+      description: |
+        Use Get Queries to retrieve specific things you already know the ID (or ref) of. 
+        You get back exactly one result (or an error) per lookup key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - type: object
+                  properties:
+                    getQuery:
+                      type: object
+                      required:
+                        - getWhat
+                        - getRefs
+                      properties:
+                        getWhat:
+                          $ref: '#/components/schemas/FindWhat'
+                        getRefs:
+                          type: array
+                          items:
+                            type: string
+                        inclFields:
+                          $ref: '#/components/schemas/InclFields'
+      responses:
+        '200':
+          description: List of things found or error results.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/ThingFound'
+                        - $ref: '#/components/schemas/ErrCodeMsg'
+
+  /-/v0/list:
+    post:
+      summary: List many resources of one type
+      description: |
+        Use List Queries to retrieve many things of one type, e.g. the latest forum posts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - type: object
+                  properties:
+                    listQuery:
+                      type: object
+                      required:
+                        - listWhat
+                      properties:
+                        listWhat:
+                          $ref: '#/components/schemas/FindWhat'
+                        inclFields:
+                          $ref: '#/components/schemas/InclFields'
+      responses:
+        '200':
+          description: List of things found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ThingFound'
+
+  /-/v0/search:
+    post:
+      summary: Search for things via full text / faceted search
+      description: |
+        Find things using the full-text / faceted search backend (e.g. Elasticsearch).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - type: object
+                  properties:
+                    searchQuery:
+                      $ref: '#/components/schemas/SearchQuery'
+                    limit:
+                      type: integer
+                    continueAtScrollCursor:
+                      $ref: '#/components/schemas/SearchResultsScrollCursor'
+      responses:
+        '200':
+          description: Search results with optional scroll cursor.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  origin:
+                    type: string
+                  thingsFound:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ThingFound'
+                  scrollCursor:
+                    $ref: '#/components/schemas/SearchResultsScrollCursor'
+
+  /-/v0/query:
+    post:
+      summary: Run multiple queries in a single request
+      description: |
+        Run a batch of queries of different types (get, list, search) and receive their combined results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - type: object
+                  properties:
+                    runQueries:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/QueryApiTask'
+      responses:
+        '200':
+          description: List of query results, each corresponding to a query in the request.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/ThingFound'
+                        - $ref: '#/components/schemas/ErrCodeMsg'
+
+components:
+  schemas:
+    ApiRequest:
+      type: object
+      properties:
+        pretty:
+          type: boolean
+
+    FindWhat:
+      type: string
+      enum:
+        - Events
+        - Pages
+        - Posts
+        - Members
+        - Pats
+        - Invites
+        - EmailsSent
+        - Tags
+        - Categories
+        - Badges
+
+    ThingFound:
+      oneOf:
+        - $ref: '#/components/schemas/PageFound'
+        - $ref: '#/components/schemas/PageListed'
+        - $ref: '#/components/schemas/PostFound'
+        - $ref: '#/components/schemas/PostListed'
+        - $ref: '#/components/schemas/TyPat'
+        - $ref: '#/components/schemas/CategoryFound'
+        - $ref: '#/components/schemas/TagFound'
+      discriminator:
+        propertyName: what
+        mapping:
+          Page: '#/components/schemas/PageFound'
+          Post: '#/components/schemas/PostFound'
+          Pat: '#/components/schemas/TyPat'
+          Category: '#/components/schemas/CategoryFound'
+          Tag: '#/components/schemas/TagFound'
+
+    PageFound:
+      allOf:
+        - $ref: '#/components/schemas/PageListed'
+        - type: object
+          required:
+            - postsFound
+          properties:
+            postsFound:
+              type: array
+              items:
+                $ref: '#/components/schemas/PostFound'
+
+    PageListed:
+      type: object
+      properties:
+        what:
+          type: string
+          enum: [Page]
+        id:
+          type: string
+        title:
+          type: string
+        urlPath:
+          type: string
+        excerpt:
+          type: string
+        author:
+          $ref: '#/components/schemas/TyPat'
+        categoriesMainFirst:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryFound'
+
+    PostFound:
+      type: object
+      properties:
+        what:
+          type: string
+          enum: [Post]
+        isPageTitle:
+          type: boolean
+        isPageBody:
+          type: boolean
+        author:
+          $ref: '#/components/schemas/TyPat'
+        htmlWithMarks:
+          type: array
+          items:
+            type: string
+
+    PostListed:
+      type: object
+      properties:
+        id:
+          type: integer
+        nr:
+          type: integer
+        parentNr:
+          type: integer
+        pageId:
+          type: string
+        pageTitle:
+          type: string
+        urlPath:
+          type: string
+        author:
+          $ref: '#/components/schemas/UserFound'
+        approvedHtmlSanitized:
+          type: string
+
+    TyPat:
+      type: object
+      properties:
+        what:
+          type: string
+          enum: [Pat]
+        id:
+          type: string
+        ssoId:
+          type: string
+        extId:
+          type: string
+        ppId:
+          type: string
+        username:
+          type: string
+        fullName:
+          type: string
+        tinyAvatarUrl:
+          type: string
+        isGroup:
+          type: boolean
+        isGuest:
+          type: boolean
+
+    UserFound:
+      allOf:
+        - $ref: '#/components/schemas/TyPat'
+        - type: object
+          properties:
+            username:
+              type: string
+            isGroup:
+              type: boolean
+              enum: [false]
+
+    CategoryFound:
+      type: object
+      properties:
+        categoryId:
+          type: string
+        name:
+          type: string
+        urlPath:
+          type: string
+
+    TagFound:
+      type: object
+      description: Placeholder for tag search result. Not yet implemented.
+      properties:
+        dummy:
+          type: string
+
+    InclFields:
+      type: object
+      description: Fields to include in responses. Currently a placeholder.
+
+    ErrCodeMsg:
+      type: object
+      properties:
+        errCode:
+          type: string
+        msg:
+          type: string
+
+    SearchQuery:
+      type: object
+      properties:
+        freetext:
+          type: string
+        findWhat:
+          $ref: '#/components/schemas/FindWhat'
+        lookWhere:
+          type: object
+          description: | 
+            Field filters to narrow the search scope. Example:
+            { usernames: true, fullNames: true }
+
+    SearchResultsScrollCursor:
+      type: object
+      description: Not implemented
+
+    QueryApiTask:
+      oneOf:
+        - type: object
+          properties:
+            getQuery:
+              type: object
+              required:
+                - getWhat
+                - getRefs
+              properties:
+                getWhat:
+                  $ref: '#/components/schemas/FindWhat'
+                getRefs:
+                  type: array
+                  items:
+                    type: string
+                inclFields:
+                  $ref: '#/components/schemas/InclFields'
+        - type: object
+          properties:
+            listQuery:
+              type: object
+              required:
+                - listWhat
+              properties:
+                listWhat:
+                  $ref: '#/components/schemas/FindWhat'
+                inclFields:
+                  $ref: '#/components/schemas/InclFields'
+        - type: object
+          properties:
+            searchQuery:
+              $ref: '#/components/schemas/SearchQuery'
+            limit:
+              type: integer
+            continueAtScrollCursor:
+              $ref: '#/components/schemas/SearchResultsScrollCursor'
+
