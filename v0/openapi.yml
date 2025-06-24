@@ -1,1 +1,529 @@
-openapi-gemini.yml
+# The OpenAPI specification: https://swagger.io/specification/
+openapi: 3.1.0
+info:
+  title: Talkyard API Documentation
+  version: v0
+  description: |
+    First, enable the API. Go to `https:// your talkyard site /-/admin/settings/features`
+    and click **Enable API** and save the settings. 
+
+    There's these API endpoints: `/-/v0/get`, `list`, `query`, `do`, `query-do`,
+    to which you send POST requests, and json in the payload that describes what
+    you want to get, list, or do.
+    &thinsp; And webhooks.<!-- They let you fetch specific things if you
+    have references to them already (e.g. page ids or usernames).
+    And let you list things, say, pages in a category or users in a group.
+    And lets you make changes, e.g. create pages or add users. -->
+
+    To access restricted parts of your site, you need an API secret:
+    Go to the **API** tab in the admin area (it'll be visible once you've enabled the API),
+    and generate a secret.
+
+    Don't share the API secret with others! Don't send it emails or chat messages
+    to anyone.
+
+    Then, when doing API requests from your server to Talkyard's API, include an Authorization header:
+
+    ```
+    Authorization: Basic BASE64_TEXT
+    ```
+
+    where `BASE64_TEXT` is:  `tyid=2:API_SECRET` but base64 encoded.
+    &thinsp; `API_SECRET` is the API secret you generated in the API tab.
+    &thinsp; "tyid" means Talkyard ID, and 2 is the Sysbot user id.
+    So, `tyid=2` means that the API request is being done as the Sysbot user (Sysbot is a Talkyard user intended for API requests. <small>There's also a System user with id 1 but it cannot do API requests</small>).
+
+    Ask for help in the forum: https://forum.talkyard.io
+
+
+servers:
+  - url: https://{origin}/-/v0
+    variables:
+      origin:
+        default: api-demo.talkyard.io
+        description: The address of the Talkyard server.
+  # url: http://api-test.localhost/-/v0
+  - url: http://e2e-test-cid-0-0-now-2842.localhost
+  #- url: http://e2e-test-cid-0-0-now-2842.localhost/-/v0
+    description: >
+      For automated tests of the API, if you start Talkyard on your laptop. Or for CI/CD.
+
+paths:
+  /-/v0/get:
+    post:
+      summary: Get things
+      description: |
+        Fetches things by id or reference.
+        When you know precisely what you want, use a Get Query to look up
+        by id / url / username / something. You can rpecify many references in
+        an array in the request payload. And you'll get back an array with the
+        lookup results. The result array is of the same size — if something wasn't
+        found, it's slot in the array is an ErrCodeMsg.
+        <!-- How link to the ErrCodeMsg model? Not Fond error -->
+
+        Tech details: Looks up by database primary or unique key.
+      operationId: GetThings
+      # Both no-auth and TyBasicAuth.
+      security:
+        - {} # works without auth, but then more often returns 404 Not Found
+        - TyBasicAuth: []
+      requestBody:
+        #description: A Get Query to fetch one or more specific items.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetThingsApiRequest'
+      responses:
+        '200':
+          description: >
+            A list of found things and any errors, in the same order as
+            the requested references.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetThingsApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed_POST_instead'
+        '413':
+          $ref: '#/components/responses/RequestEntityTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /-/v0/list:
+    post:
+      summary: List things
+      description: |
+        E.g. recent comments, pages in a category, users in a group.
+
+        Tech details: Typically uses PostgreSQL index range scans.
+      operationId: ListThings
+      security:
+        - {} # auth not required, but then fewer / no things returned.
+        #- TyBasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListThingsApiRequest'
+      responses:
+        '200':
+          description: >
+            A list of found things, possibly empty.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListThingsApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed_POST_instead'
+        '413':
+          $ref: '#/components/responses/RequestEntityTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+components:
+  securitySchemes:
+    TyBasicAuth:
+      type: http
+      scheme: basic
+      description: |
+        Generate an API secret at: `https:// your talkyard site /-/admin/api/`.
+        Then, as Basic Authorization username:password, use
+        `tyid=2:API_SECRET`. "tyid" means Talkyard ID, and 2 is the Sysbot user id.
+  schemas:
+
+    #-------------------------------------------------------------------
+    # The Get API
+    #-------------------------------------------------------------------
+
+    GetThingsApiRequest:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - $ref: '#/components/schemas/GetThingsQueryWrapper'
+
+    # REMOVE this _wrapper, use discriminator field instead. [ty_v1]
+    GetThingsQueryWrapper:
+      type: object
+      properties:
+        getQuery:
+          $ref: '#/components/schemas/GetThingsQuery'
+      required:
+        - getQuery
+
+    GetThingsQuery:
+      type: object
+      #discriminator:
+      #  propertyName: getWhat
+      #  mapping:
+      #    Pages: '#/components/schemas/GetPagesQuery'
+      #    Pats: '#/components/schemas/GetPatsQuery'
+      properties:
+        getWhat:
+          $ref: '#/components/schemas/FindWhat'
+        getRefs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ref'
+        inclFields:
+          $ref: '#/components/schemas/InclFields'
+      required:
+        - getWhat
+        - getRefs
+
+    GetThingsApiResponse:
+      type: object
+      properties:
+        origin:
+          type: string
+          format: uri
+          description: >
+            The origin url of the Talkyard server, useful for constructing full
+            urls from relative paths.
+        thingsOrErrs:
+          type: array
+          description: >
+            One item for each getRefs[] item, in the same order. An item can be
+            the found thing, an error object, or null if not found.
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/ThingFound'
+              - $ref: '#/components/schemas/ErrCodeMsg'
+              - type: 'null'
+
+    #-------------------------------------------------------------------
+    # The List API
+    #-------------------------------------------------------------------
+
+    ListThingsApiRequest:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/ApiRequest'
+        - $ref: '#/components/schemas/ListThingsQueryWrapper'
+
+    # REMOVE this _wrapper.
+    ListThingsQueryWrapper:
+      type: object
+      properties:
+        listQuery:
+          $ref: '#/components/schemas/ListThingsQuery'
+        limit:
+          type: integer
+      required:
+        - listQuery
+
+    ListThingsQuery:
+      type: object
+    #   #discriminator:
+    #   #  propertyName: listWhat
+    #   #  mapping:
+    #   #    Pages: '#/components/schemas/ListPagesQuery'
+    #   #    Pats: '#/components/schemas/ListPatsQuery'
+      properties: {}
+    #     listWhat:
+    #       $ref: '#/components/schemas/FindWhat'
+    #     inclFields:
+    #       $ref: '#/components/schemas/InclFields'
+    #     exactPrefix:
+    #       type: string
+    #       description: A prefix to match, e.g., for username autocompletion.
+    #     lookWhere:
+    #       $ref: '#/components/schemas/LookWhere'
+    #     filter: QueryFilter;
+    #     # sortOrder?;
+    #     # limit?: Nr;
+    #   required:
+    #     - listWhat
+
+    ListThingsApiResponse:
+      type: object
+      allOf:
+         $ref: '#/components/schemas/ResponseWithOrigin'
+      properties: {}
+
+    #-------------------------------------------------------------------
+    # Models
+    #-------------------------------------------------------------------
+
+    Ref:
+      type: string
+      description: >
+        A reference that uniquely identifies something.
+        Often prefixed with the type of things it refers to.
+        E.g., 'pageid:123', 'username:someone'.
+        Or 'emgurl:https://...', for "embedding url".
+
+    FindWhat:
+      type: string
+      description: |
+        The different things e.g. List and Search queries can find.
+        'Pats' means "Participants" — users, groups but also guests and anonyms.
+      enum:
+        - Pages
+        - Posts
+        - Members
+        - Pats
+        - Events
+        - Tags
+        - Badges
+        - Categories
+        - Invites
+        - EmailsSent
+
+    PageTypeSt:
+      type: string
+      enum:
+        - Question
+        - Problem
+        - Idea
+        - Discussion
+
+    LookWhere:
+      type: object
+      description: In which text fields or content sections to look.
+      properties:
+        usernames:
+          type: boolean
+        #fullNames:
+        #  type: boolean
+        #emailAddresses:
+        #  type: boolean
+        #inGroups:
+        #  type: array
+        #  items:
+        #    $ref: '#/components/schemas/PatRef'
+        #withBadges:
+        #  type: array
+        #  items:
+        #    $ref: '#/components/schemas/BadgeRef'
+        #aboutText:
+        #  type: boolean
+        #titleText:
+        #  type: boolean
+        #bodyText:
+        #  type: boolean
+        #repliesText:
+        #  type: boolean
+        #pageText:
+        #  type: boolean
+        #pageTypes:
+        #  type: array
+        #  items:
+        #    $ref: '#/components/schemas/PageTypeSt'
+        #inPages:
+        #  type: array
+        #  items:
+        #    $ref: '#/components/schemas/PageRef'
+        #inCategories:
+        #  type: array
+        #  items:
+        #    $ref: '#/components/schemas/CategoryRef'
+        #withTags:
+        #  type: array
+        #  items:
+        #    $ref: '#/components/schemas/TagRef'
+        #writtenBy:
+        #  type: array
+        #  items:
+        #    $ref: '#/components/schemas/PatRef'
+
+    QueryFilter:
+      $ref: '#/components/schemas/PageFilter'
+
+    PageFilter:
+      type: object
+      properties:
+        isDeleted:
+          type: boolean
+          default: false
+        isOpen:
+          type: boolean
+        isAuthorWaiting:
+          type: boolean
+        pageType:
+          type: object
+          properties:
+            _in:
+              type: array
+              items:
+                $ref: '#/components/schemas/PageTypeSt'
+
+    # --- Fields to incl in the response
+
+    InclFields:
+      type: object
+      properties: {}
+      # Ooops! Don't make it recursive
+      # oneOf:
+      #   - $ref: '#/components/schemas/InclPageFields'
+      #   - $ref: '#/components/schemas/InclPatFields'
+
+    #InclPageFields:
+    #  type: object
+    #  description: Specifies which page fields to include in the API response.
+    #  allOf:
+    #    - $ref: '#/components/schemas/InclFields'
+    #  properties:
+    #    id:
+    #      type: boolean
+    #    refId:
+    #      type: boolean
+    #    numOpLikeVotes:
+    #      type: boolean
+    #    numOpDoItVotes:
+    #      type: boolean
+    #    numOpDoNotVotes:
+    #      type: boolean
+    #    numTotRepliesVisible:
+    #      type: boolean
+    #    title:
+    #      type: boolean
+    #    origPost:
+    #      type: boolean
+    #      description: Unimplemented!
+
+    #InclPatFields:
+    #  type: object
+    #  description: Not implemented. Specifies which participant fields to include.
+    #  allOf:
+    #    - $ref: '#/components/schemas/InclFields'
+    #  properties:
+    #    id:
+    #      type: boolean
+    #    refId:
+    #      type: boolean
+    #    ssoId:
+    #      type: boolean
+    #    fullName:
+    #      type: boolean
+    #    username:
+    #      type: boolean
+    #    isGuest:
+    #      type: boolean
+
+    # ------
+
+    ThingFound:
+      description: A union of all possible things that can be found by a query.
+      type: object
+      #oneOf:
+      #  - $ref: '#/components/schemas/PageFound'
+      #  - $ref: '#/components/schemas/PageListed'
+      #  - $ref: '#/components/schemas/PostListed'
+      #  - $ref: '#/components/schemas/Event_'
+      #  - $ref: '#/components/schemas/TyPat'
+      #  # - $ref: '#/components/schemas/TagFound'
+      #  # - $ref: '#/components/schemas/CategoryFound'
+      #discriminator:
+      #  propertyName: what
+      #  mapping:
+      #    Event: '#/components/schemas/Event_'
+      #    Page: '#/components/schemas/PageListed' # Using PageListed as the common denominator
+      #    Post: '#/components/schemas/PostListed'
+      #    Pat: '#/components/schemas/TyPat'
+
+    ErrCodeMsg:
+      type: object
+      description: Error code and message.
+      properties:
+        errCode:
+          type: string
+        errMsg:
+          type: string
+      required:
+        - errCode
+        - errMsg
+
+    ApiRequest:
+      type: object
+      properties:
+        pretty:
+          type: boolean
+          description: If true, the JSON response will be pretty-printed.
+
+    ApiErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ErrCodeMsg'
+          properties:
+            httpStatusCode:
+              type: integer
+
+    ResponseWithOrigin:
+      type: object
+      properties:
+        origin:
+          type: string
+          format: uri
+          description: >
+            Insert before relative urls, to get the full url.
+
+  responses:
+    BadRequest:
+      description: >
+        Bad Request. Malformed or invalid parameters, or trying to do something
+        that just doesn't make sense.
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
+        text/plain: { schema: { type: string } }
+        text/html: { schema: { type: string } }
+    Unauthorized:
+      description: Unauthorized. Authentication required, but failed or wasn't provided.
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
+        text/plain: { schema: { type: string } }
+        text/html: { schema: { type: string } }
+    Forbidden:
+      description: >
+        Forbidden. The authenticated user does not have permission to perform
+        this action.
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
+        text/plain: { schema: { type: string } }
+        text/html: { schema: { type: string } }
+    NotFound:
+      description: Not Found. The server cannot find the requested resource.
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
+        text/plain: { schema: { type: string } }
+        text/html: { schema: { type: string } }
+    MethodNotAllowed_POST_instead:
+      description: Method Not Allowed. Use POST instead.
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
+        text/plain: { schema: { type: string } }
+        text/html: { schema: { type: string } }
+    RequestEntityTooLarge:
+      description: Request Entity Too Large
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
+        text/plain: { schema: { type: string } }
+        text/html: { schema: { type: string } }
+    TooManyRequests:
+      description: >
+        Too Many Requests. The client has sent too many requests in a given amount of time.
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
+        text/plain: { schema: { type: string } }
+        text/html: { schema: { type: string } }
+
