@@ -37,19 +37,21 @@ info:
 
 
 servers:
-  - url: https://{origin}/-/v0
+  # Don't include the /-/v0 prefix in the server url — chemathesis then duplicates
+  # it, becomes: '/-/v0' — although Scalar doesn't. Let's place the
+  # _path_prefix_here_instead, that is, at each path.
+  - url: https://{origin}
     variables:
       origin:
         default: api-demo.talkyard.io
         description: The address of the Talkyard server.
-  # url: http://api-test.localhost/-/v0
+  # url: http://api-test.localhost  ?
   - url: http://e2e-test-cid-0-0-now-2842.localhost
-  #- url: http://e2e-test-cid-0-0-now-2842.localhost/-/v0
     description: >
       For automated tests of the API, if you start Talkyard on your laptop. Or for CI/CD.
 
 paths:
-  /-/v0/get:
+  /-/v0/get:  # _path_prefix_here_instead
     post:
       summary: Get things
       description: |
@@ -73,7 +75,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/GetThingsApiRequest'
+              #$ref: '#/components/schemas/GetThingsApiRequest'
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - $ref: '#/components/schemas/GetThingsQuery'
       responses:
         '200':
           description: >
@@ -94,7 +99,7 @@ paths:
         '405':
           $ref: '#/components/responses/MethodNotAllowed_POST_instead'
         '413':
-          $ref: '#/components/responses/RequestEntityTooLarge'
+          $ref: '#/components/responses/ContentTooLarge'
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
@@ -114,7 +119,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ListThingsApiRequest'
+              #$ref: '#/components/schemas/ListThingsApiRequest'
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - $ref: '#/components/schemas/ListThingsQuery'
       responses:
         '200':
           description: >
@@ -134,7 +142,7 @@ paths:
         '405':
           $ref: '#/components/responses/MethodNotAllowed_POST_instead'
         '413':
-          $ref: '#/components/responses/RequestEntityTooLarge'
+          $ref: '#/components/responses/ContentTooLarge'
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
@@ -147,46 +155,88 @@ components:
         Generate an API secret at: `https:// your talkyard site /-/admin/api/`.
         Then, as Basic Authorization username:password, use
         `tyid=2:API_SECRET`. "tyid" means Talkyard ID, and 2 is the Sysbot user id.
+
   schemas:
 
     #-------------------------------------------------------------------
     # The Get API
     #-------------------------------------------------------------------
 
-    GetThingsApiRequest:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/ApiRequest'
-        - $ref: '#/components/schemas/GetThingsQueryWrapper'
+    #GetThingsApiRequest:
+    #  type: object
+    #  allOf:
+    #    - $ref: '#/components/schemas/ApiRequest'
+    #    - $ref: '#/components/schemas/GetThingsQuery'
 
-    # REMOVE this _wrapper, use discriminator field instead. [ty_v1]
-    GetThingsQueryWrapper:
+    # SHOULD: Unwrap this _wrapper, use discriminator field instead  [ty_v1]
+    # of different keys (`getQuery` / `listQuery` / ...).
+    #
+    GetThingsQuery:
       type: object
       properties:
         getQuery:
-          $ref: '#/components/schemas/GetThingsQuery'
+          #$ref: '#/components/schemas/GetThingsQuery'
+          oneOf:
+            - $ref: '#/components/schemas/GetPagesQuery'
+            - $ref: '#/components/schemas/GetPatsQuery'
       required:
         - getQuery
 
-    GetThingsQuery:
+    #GetThingsQuery:  # and rename GetThingsQuery above to  GetThingsQueryWrapper
+    #  type: object
+    #  oneOf:
+    #    - $ref: '#/components/schemas/GetPagesQuery'
+    #    - $ref: '#/components/schemas/GetPatsQuery'
+    #  discriminator:
+    #    propertyName: getWhat
+    #    mapping:
+    #      Pages: '#/components/schemas/GetPagesQuery'
+    #      Pats: '#/components/schemas/GetPatsQuery'
+    #  properties:
+    #    getWhat:
+    #      $ref: '#/components/schemas/FindWhat'
+    #    #getRefs:
+    #    #  type: array
+    #    #  items:
+    #    #    $ref: '#/components/schemas/Ref'
+    #    #inclFields:
+    #    #  $ref: '#/components/schemas/InclFields'
+    #  required:
+    #    - getWhat
+    #    #- getRefs
+
+    GetPagesQuery:
+      title: GetPagesQuery
       type: object
-      #discriminator:
-      #  propertyName: getWhat
-      #  mapping:
-      #    Pages: '#/components/schemas/GetPagesQuery'
-      #    Pats: '#/components/schemas/GetPatsQuery'
+      #allOf:
+      #  - $ref: '#/components/schemas/GetThingsQuery'
       properties:
         getWhat:
-          $ref: '#/components/schemas/FindWhat'
+          type: string
+          const: 'Pages'
         getRefs:
           type: array
           items:
-            $ref: '#/components/schemas/Ref'
+            $ref: '#/components/schemas/PageRef'
         inclFields:
-          $ref: '#/components/schemas/InclFields'
-      required:
-        - getWhat
-        - getRefs
+          $ref: '#/components/schemas/InclPageFields'
+
+    GetPatsQuery:
+      title: GetParticipantsQuery
+      description: Not implemented.
+      type: object
+      #allOf:
+      #  - $ref: '#/components/schemas/GetThingsQuery'
+      properties:
+        getWhat:
+          type: string
+          const: 'Pats'
+        getRefs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ref'  # PatRef
+        inclFields:
+          $ref: '#/components/schemas/InclPatFields'
 
     GetThingsApiResponse:
       type: object
@@ -212,50 +262,92 @@ components:
     # The List API
     #-------------------------------------------------------------------
 
-    ListThingsApiRequest:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/ApiRequest'
-        - $ref: '#/components/schemas/ListThingsQueryWrapper'
+    #ListThingsApiRequest:
+    #  type: object
+    #  allOf:
+    #    - $ref: '#/components/schemas/ApiRequest'
+    #    - $ref: '#/components/schemas/ListThingsQuery'
 
-    # REMOVE this _wrapper.
-    ListThingsQueryWrapper:
+    # SHOULD: Unwrap this _wrapper, use discriminator field instead  [ty_v1]
+    ListThingsQuery:
       type: object
       properties:
         listQuery:
-          $ref: '#/components/schemas/ListThingsQuery'
+          # $ref: '#/components/schemas/ListThingsQuery'
+          oneOf:
+            - $ref: '#/components/schemas/ListPagesQuery'
+            - $ref: '#/components/schemas/ListPatsQuery'
         limit:
           type: integer
       required:
         - listQuery
 
-    ListThingsQuery:
+    #ListThingsQuery:  # and rename ListThingsQuery above to ListThingsQueryWrapper
+    #  type: object
+    #  # oneOf:
+    #  #   - '#/components/schemas/ListPagesQuery'
+    #  #   - '#/components/schemas/ListPatsQuery'
+    #  discriminator:
+    #    propertyName: listWhat
+    #    mapping:
+    #      Pages: '#/components/schemas/ListPagesQuery'
+    #      Pats: '#/components/schemas/ListPatsQuery'
+    #  properties:
+    #    listWhat:
+    #      $ref: '#/components/schemas/FindWhat'
+    #    # inclFields:
+    #    #   $ref: '#/components/schemas/InclFields'
+    #    # Not impl
+    #    #exactPrefix:
+    #    #  type: string
+    #    #  description: A prefix to match, e.g., for username autocompletion.
+    #    lookWhere:
+    #      $ref: '#/components/schemas/LookWhere'
+    #    #filter:
+    #    #  $ref: '#/components/schemas/PageFilter'
+    #    limit:
+    #      type: integer
+    #  required:
+    #    - listWhat
+
+    ListPagesQuery:
+      title: ListPagesQuery
       type: object
-    #   #discriminator:
-    #   #  propertyName: listWhat
-    #   #  mapping:
-    #   #    Pages: '#/components/schemas/ListPagesQuery'
-    #   #    Pats: '#/components/schemas/ListPatsQuery'
-      properties: {}
-    #     listWhat:
-    #       $ref: '#/components/schemas/FindWhat'
-    #     inclFields:
-    #       $ref: '#/components/schemas/InclFields'
-    #     exactPrefix:
-    #       type: string
-    #       description: A prefix to match, e.g., for username autocompletion.
-    #     lookWhere:
-    #       $ref: '#/components/schemas/LookWhere'
-    #     filter: QueryFilter;
-    #     # sortOrder?;
-    #     # limit?: Nr;
-    #   required:
-    #     - listWhat
+      #allOf:
+      #  # - $ref: '#/components/schemas/ListThingsQuery'
+      #  - type: object
+      properties:
+        listWhat:
+          type: string
+          const: 'Pages'
+        inclFields:
+          $ref: '#/components/schemas/InclPageFields'
+        filter:
+          $ref: '#/components/schemas/PageFilter'
+        sortOrder:
+          $ref: '#/components/schemas/PageSortOrder'
+
+    ListPatsQuery:
+      title: ListParticipantsQuery
+      type: object
+      #allOf:
+      #  #- $ref: '#/components/schemas/ListThingsQuery'
+      #  - type: object
+      properties:
+        listWhat:
+          type: string
+          const: 'Pats'
+        inclFields:
+          $ref: '#/components/schemas/InclPatFields'
+        filter:
+          $ref: '#/components/schemas/PatFilter'
+        # sortOrder:
+        #   $ref: '#/components/schemas/??'
 
     ListThingsApiResponse:
       type: object
       allOf:
-         $ref: '#/components/schemas/ResponseWithOrigin'
+        - $ref: '#/components/schemas/ResponseWithOrigin'
       properties: {}
 
     #-------------------------------------------------------------------
@@ -268,7 +360,11 @@ components:
         A reference that uniquely identifies something.
         Often prefixed with the type of things it refers to.
         E.g., 'pageid:123', 'username:someone'.
-        Or 'emgurl:https://...', for "embedding url".
+    PageRef:
+      type: string
+      description: >
+        A reference to a page, e.g. 'pageid:112233', 'refid:something',
+        or 'emgurl:https://...' for "embedding url".
 
     FindWhat:
       type: string
@@ -344,81 +440,101 @@ components:
         #  items:
         #    $ref: '#/components/schemas/PatRef'
 
+    # --- Filter
+
     QueryFilter:
-      $ref: '#/components/schemas/PageFilter'
+      type: object
+      properties: {}
 
     PageFilter:
-      type: object
-      properties:
-        isDeleted:
-          type: boolean
-          default: false
-        isOpen:
-          type: boolean
-        isAuthorWaiting:
-          type: boolean
-        pageType:
-          type: object
+      allOf:
+        - $ref: '#/components/schemas/QueryFilter'
+        - type: object
           properties:
-            _in:
-              type: array
-              items:
-                $ref: '#/components/schemas/PageTypeSt'
+            isDeleted:
+              type: boolean
+              default: false
+            isOpen:
+              type: boolean
+            isAuthorWaiting:
+              type: boolean
+            pageType:
+              type: object
+              properties:
+                _in:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/PageTypeSt'
+
+    PatFilter:
+      allOf:
+        - $ref: '#/components/schemas/QueryFilter'
+        - type: object
+          properties: {}
 
     # --- Fields to incl in the response
 
     InclFields:
+      oneOf:
+        - $ref: '#/components/schemas/InclPageFields'
+        - $ref: '#/components/schemas/InclPatFields'
+
+    InclFieldsBase:
       type: object
-      properties: {}
-      # Ooops! Don't make it recursive
-      # oneOf:
-      #   - $ref: '#/components/schemas/InclPageFields'
-      #   - $ref: '#/components/schemas/InclPatFields'
+      properties:
+        id:
+          type: boolean
+        refId:
+          type: boolean
 
-    #InclPageFields:
-    #  type: object
-    #  description: Specifies which page fields to include in the API response.
-    #  allOf:
-    #    - $ref: '#/components/schemas/InclFields'
-    #  properties:
-    #    id:
-    #      type: boolean
-    #    refId:
-    #      type: boolean
-    #    numOpLikeVotes:
-    #      type: boolean
-    #    numOpDoItVotes:
-    #      type: boolean
-    #    numOpDoNotVotes:
-    #      type: boolean
-    #    numTotRepliesVisible:
-    #      type: boolean
-    #    title:
-    #      type: boolean
-    #    origPost:
-    #      type: boolean
-    #      description: Unimplemented!
+    InclPageFields:
+      type: object
+      description: Specifies which page fields to include in the API response.
+      allOf:
+        - $ref: '#/components/schemas/InclFieldsBase'
+        - properties:
+            numOpLikeVotes:
+              type: boolean
+            numOpDoItVotes:
+              type: boolean
+            numOpDoNotVotes:
+              type: boolean
+            numTotRepliesVisible:
+              type: boolean
+            title:
+              type: boolean
+            #origPost:
+            #  type: boolean
 
-    #InclPatFields:
-    #  type: object
-    #  description: Not implemented. Specifies which participant fields to include.
-    #  allOf:
-    #    - $ref: '#/components/schemas/InclFields'
-    #  properties:
-    #    id:
-    #      type: boolean
-    #    refId:
-    #      type: boolean
-    #    ssoId:
-    #      type: boolean
-    #    fullName:
-    #      type: boolean
-    #    username:
-    #      type: boolean
-    #    isGuest:
-    #      type: boolean
+    InclPatFields:
+      type: object
+      description: Not implemented. Specifies which participant fields to include.
+      allOf:
+       - $ref: '#/components/schemas/InclFieldsBase'
+      #- properties:
+      #    ssoId:
+      #      type: boolean
+      #    fullName:
+      #      type: boolean
+      #    username:
+      #      type: boolean
+      #    isGuest:
+      #      type: boolean
 
-    # ------
+    PageSortOrder:
+      type: string
+      enum:
+        - PopularFirst
+        - ActiveFirst
+        - NewestFirst
+
+    EventSortOrder:
+      type: string
+      enum:
+        - NewestFirst
+        - OldestFirst
+
+    # --- Response contents
 
     ThingFound:
       description: A union of all possible things that can be found by a query.
@@ -438,6 +554,9 @@ components:
       #    Page: '#/components/schemas/PageListed' # Using PageListed as the common denominator
       #    Post: '#/components/schemas/PostListed'
       #    Pat: '#/components/schemas/TyPat'
+
+
+    # --- Request, response objects
 
     ErrCodeMsg:
       type: object
@@ -513,8 +632,8 @@ components:
         application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
         text/plain: { schema: { type: string } }
         text/html: { schema: { type: string } }
-    RequestEntityTooLarge:
-      description: Request Entity Too Large
+    ContentTooLarge:
+      description: Content Too Large
       content:
         application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' }}
         text/plain: { schema: { type: string } }
