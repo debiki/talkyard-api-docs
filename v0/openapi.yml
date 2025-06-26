@@ -53,7 +53,7 @@ servers:
 paths:
   /-/v0/get:  # _path_prefix_here_instead
     post:
-      summary: Get things
+      summary: Get
       description: |
         Fetches things by id or reference.
         When you know precisely what you want, use a Get Query to look up
@@ -67,8 +67,8 @@ paths:
       operationId: GetThings
       # Both no-auth and TyBasicAuth.
       security:
-        - {} # works without auth, but then more often returns 404 Not Found
-        - TyBasicAuth: []
+        - {} # _auth_not_required, but fewer things returned.
+        #- TyBasicAuth: []
       requestBody:
         #description: A Get Query to fetch one or more specific items.
         required: true
@@ -105,14 +105,14 @@ paths:
 
   /-/v0/list:
     post:
-      summary: List things
+      summary: List
       description: |
         E.g. recent comments, pages in a category, users in a group.
 
         Tech details: Typically uses PostgreSQL index range scans.
       operationId: ListThings
       security:
-        - {} # auth not required, but then fewer / no things returned.
+        - {} # _auth_not_required
         #- TyBasicAuth: []
       requestBody:
         required: true
@@ -131,6 +131,136 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListThingsApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed_POST_instead'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /-/v0/search:
+    post:
+      summary: Search
+      description: >
+        Finds things via the full text search / faceted search database — that is, ElasticSearch (currently), not PostgreSQL.
+        E.g. recent comments, pages in a category, users in a group.
+
+        Tech details: Uses ElasticSearch.
+      operationId: SearchQuery
+      security:
+        - {} # _auth_not_required
+        #- TyBasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - $ref: '#/components/schemas/SearchQuery'
+      responses:
+        '200':
+          description: OK. Search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchQueryApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed_POST_instead'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # Not yet implemented, hence ignore: true, below.
+  /-/v0/query:
+    post:
+      #x-scalar-ignore: true  # works
+      #x-internal: true   # works
+      #x-ignore: true    # no effect (2025-06)
+      summary: Query
+      description: |
+        Run different queries, e.g. Get Things and List Things, in a
+        single API request.
+      operationId: Query
+      security:
+        - {} # auth not required, but then fewer / no things returned.
+        #- TyBasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - $ref: '#/components/schemas/ManyQueries'
+      responses:
+        '200':
+          description: >
+            Lists of found things, possibly empty. One per query in the API request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixedQueryApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed_POST_instead'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # Not yet implemented:
+  # /-/v0/query-do:
+
+  /-/v0/do:
+    post:
+      summary: Do
+      description: >
+        Perform one or more actions, like creating pages, posting comments, or voting.
+      operationId: DoActions
+      security:
+        - {} # _auth_not_required
+        #- TyBasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiRequest'
+                - $ref: '#/components/schemas/DoActions'
+      responses:
+        '200':
+          description: >
+            The response contains a list of results, one for each action performed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoApiResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -172,6 +302,7 @@ components:
     # of different keys (`getQuery` / `listQuery` / ...).
     #
     GetThingsQuery:
+      title: GetQuery
       type: object
       properties:
         getQuery:
@@ -270,6 +401,7 @@ components:
 
     # SHOULD: Unwrap this _wrapper, use discriminator field instead  [ty_v1]
     ListThingsQuery:
+      title: ListQuery
       type: object
       properties:
         listQuery:
@@ -344,11 +476,377 @@ components:
         # sortOrder:
         #   $ref: '#/components/schemas/??'
 
-    ListThingsApiResponse:
-      type: object
+    ListThingsApiResponse:  # very similar, _list_search_resp
+      description: An array with found things.
+      title: ListThingsApiResponse
       allOf:
         - $ref: '#/components/schemas/ResponseWithOrigin'
-      properties: {}
+        - properties:
+            thingsFound:
+              type: array
+              items:
+                $ref: '#/components/schemas/ThingFound'
+
+    #-------------------------------------------------------------------
+    # The Search API
+    #-------------------------------------------------------------------
+
+    # SHOULD: Unwrap this _wrapper, use discriminator field instead  [ty_v1]
+    SearchQuery:
+      title: SearchQuery
+      type: object
+      description: >
+        A full text search query, or an array of search queries if you
+        want to search in many places.
+      properties:
+        searchQuery:
+          #$ref: '#/components/schemas/SinglSearchQuery'
+          type: object
+          properties:
+            freetext:
+              type: string
+              description: Free-form text for the server to interpret and search on.
+            findWhat:
+              $ref: '#/components/schemas/FindWhat'
+            lookWhere:
+              $ref: '#/components/schemas/LookWhere'
+        limit:
+          type: integer
+      required:
+        - searchQuery
+
+    #SinglSearchQuery:
+    #  title: SinglSearchQuery
+    #  type: object
+    #  properties:
+    #    freetext:
+    #      type: string
+    #      description: Free-form text for the server to interpret and search on.
+    #    findWhat:
+    #      $ref: '#/components/schemas/FindWhat'
+    #    lookWhere:
+    #      $ref: '#/components/schemas/LookWhere'
+
+    SearchQueryApiResponse:  # very similar, _list_search_resp
+      #title: SearchQueryApiResponse
+      allOf:
+        - $ref: '#/components/schemas/ResponseWithOrigin'
+        - properties:
+            thingsFound:
+              description: An array with found things, and html with highlight marks.
+              type: array
+              items:
+                $ref: '#/components/schemas/ThingFound'
+
+    #-------------------------------------------------------------------
+    # The Query API
+    #-------------------------------------------------------------------
+
+    #ListThingsApiRequest:
+    #  type: object
+    #  allOf:
+    #    - $ref: '#/components/schemas/ApiRequest'
+    #    - $ref: '#/components/schemas/ListThingsQuery'
+
+    # SHOULD: Unwrap this _wrapper, use discriminator field instead  [ty_v1]
+    ManyQueries:
+      type: object
+      description: >
+        A list of queries to execute. Each item in this array can be
+        a "Get Things" query or a "List Things" query.
+        The response includes an array of arrays, where each inner array
+        contains results for a corresponding query.
+      properties:
+        runQueries:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/GetThingsQuery'
+              - $ref: '#/components/schemas/ListThingsQuery'
+              - $ref: '#/components/schemas/SearchQuery'
+        limit:
+          type: integer
+      required:
+        - runQueries
+
+    MixedQueryApiResponse: {}
+
+    #-------------------------------------------------------------------
+    # The Do API
+    #-------------------------------------------------------------------
+
+    # SHOULD: Unwrap this _wrapper, use discriminator field instead  [ty_v1]
+    DoActions:
+      title: DoActions
+      type: object
+      description: >
+        A full text search query, or an array of search queries if you
+        want to search in many places.
+      properties:
+        doActions:
+          type: array
+          # Could do this:
+          #   items:
+          #     $ref: '#/components/schemas/Action'
+          # But then Scalar won't generate any choose-action-type dropdown. Instead, Scalar
+          # just shows the Action base class fields, including doWhat with a dropdown
+          # that doesn't work (always stuck at UpsertType).
+          # This however generates a dropdown where you can choose the array item action type:
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/UpsertTypeAction'
+              - $ref: '#/components/schemas/CreatePageAction'
+              - $ref: '#/components/schemas/CreateCommentAction'
+              - $ref: '#/components/schemas/DeletePostsAction'
+              - $ref: '#/components/schemas/SetVoteAction'
+              - $ref: '#/components/schemas/SetNotfLevelAction'
+              # Allow queries here? Maybe nice to avoid extra roundtrips, after having updated
+              # sth?  Or, let's wait with queries here. Could be nice to know that /-/do
+              # always triesto write to the db?  (Rather than possibly only running queries)
+              # - $ref: '#/components/schemas/GetThingsQuery'
+              # - $ref: '#/components/schemas/ListThingsQuery'
+              # - $ref: '#/components/schemas/SearchQuery'
+      required:
+        - doActions
+
+    # Actions base class.
+    Action:
+      description: A single action to be performed.
+      type: object
+      properties:
+        asWho:
+          type: string
+          description: >
+              The user or entity performing the action.
+            # ? e.g., 'sysbot', 'tyid:_', 'extid:_', 'ssoid:_', 'username:_'.
+        doWhat:
+          type: string
+          # Could:  $ref: '#/components/schemas/DoWhat'
+          # but then Scalar shows a list of action names — that's annoying, since
+          # Scalar also shows a dropdown with action types. Don't need both.
+        doWhy:
+          type: string
+          description: Optional description for the audit log.
+        doHow:
+          type: object
+          description: Parameters specific to the action type.
+      required:
+        - asWho
+        - doWhat
+        - doHow
+      discriminator:
+        propertyName: doWhat
+        mapping:
+          UpsertType: '#/components/schemas/UpsertTypeAction'
+          CreatePage: '#/components/schemas/CreatePageAction'
+          CreateComment: '#/components/schemas/CreateCommentAction'
+          DeletePosts: '#/components/schemas/DeletePostsAction'
+          SetVote: '#/components/schemas/SetVoteAction'
+          SetNotfLevel: '#/components/schemas/SetNotfLevelAction'
+
+    # --- _Actions -------------
+    # Dont' think all these have been implemented?
+    # GENERATED BY GEMINI based on my Typescript interfaces. [kml]
+    # I haven't reviewed. Will probably commet this out for now!
+
+    DoWhat:
+      type: string
+      enum:
+        - UpsertType
+        - CreatePage
+        - CreateComment
+        - DeletePosts
+        - SetVote
+        - SetNotfLevel
+        # Incomplete based on example
+        - CreateUser
+        - AddUserToGroup
+        - MovePages
+
+    UpsertTypeAction:
+      title: UpsertTypeAction
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: UpsertType
+            doHow:
+              $ref: '#/components/schemas/UpsertTypeParams'
+
+    UpsertTypeParams:
+      type: object
+      properties:
+        refId:
+          $ref: '#/components/schemas/Ref'
+        kindOfType:
+          type: string
+          const: 'TagType'
+        dispName:
+          type: string
+        urlSlug:
+          type: string
+        valueType:
+          type: string
+          enum:
+            - Int32
+            - Flt64
+            - StrKwd
+      required:
+        - kindOfType
+        - dispName
+
+    SetVoteAction:
+      title: SetVoteAction
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: SetVote
+            doHow:
+              $ref: '#/components/schemas/SetVoteParams'
+
+    SetVoteParams:
+      type: object
+      properties:
+        voteType:
+          type: string
+          const: Like
+        howMany:
+          type: integer
+          enum: [0, 1]
+          description: 0 clears any votes (by the same person), 1 adds a vote.
+        whatPage:
+          $ref: '#/components/schemas/PageRef'
+        postNr:
+          type: integer
+          description: Defaults to the page's original post.
+        whatPost:
+          $ref: '#/components/schemas/PostRef'
+      required:
+        - voteType
+        - howMany
+
+    SetNotfLevelAction:
+      title: SetNotfLevelAction
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: SetNotfLevel
+            doHow:
+              type: object
+              properties:
+                toLevel:
+                  type: integer
+                whatPages:
+                  type: array
+                  items:
+                    type: object
+                    oneOf:
+                      - properties:
+                          pageId:
+                            type: string
+                      - properties:
+                          inCategoryId:
+                            $ref: '#/components/schemas/CategoryRef'
+              required:
+                - toLevel
+                - whatPages
+
+    CreatePageAction:
+      title: CreatePageAction
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: CreatePage
+            doHow:
+              $ref: '#/components/schemas/CreatePageParams'
+
+    CreatePageParams:
+      allOf:
+        - $ref: '#/components/schemas/CreatePostParams'
+        - type: object
+          properties:
+            title:
+              type: string
+            pageType:
+              $ref: '#/components/schemas/PageTypeSt'
+            inCategory:
+              $ref: '#/components/schemas/CategoryRef'
+          required:
+            - title
+            - pageType
+            - inCategory
+
+    CreateCommentAction:
+      title: CreateCommentAction
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: CreateComment
+            doHow:
+              $ref: '#/components/schemas/CreateCommentParams'
+
+    CreateCommentParams:
+      allOf:
+        - $ref: '#/components/schemas/CreatePostParams'
+        - type: object
+          properties:
+            parentNr:
+              type: integer
+            whatPage:
+              $ref: '#/components/schemas/PageRef'
+          required:
+            - whatPage
+
+    CreatePostParams:
+      type: object
+      properties:
+        refId:
+          $ref: '#/components/schemas/Ref'
+        bodySrc:
+          type: string
+        bodyFmt:
+          type: string
+          const: CommonMark
+        withTags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagAnyVal'
+      required:
+        - bodySrc
+        - bodyFmt
+
+    DeletePostsAction:
+      title: DeletePostsAction
+      allOf:
+        - $ref: '#/components/schemas/Action'
+        - type: object
+          properties:
+            doWhat:
+              const: DeletePosts
+            doHow:
+              $ref: '#/components/schemas/DeletePostsParams'
+
+    DeletePostsParams:
+      type: object
+      properties:
+        whatPost:
+          $ref: '#/components/schemas/PostRef'
+        postsCreatedBy:
+          $ref: '#/components/schemas/PatRef'
+        postsCreatedAfter:
+          type: integer
+          description: Timestamp in milliseconds.
+
+    # -- / _Actions -------------
 
     #-------------------------------------------------------------------
     # Models
@@ -534,10 +1032,11 @@ components:
         - NewestFirst
         - OldestFirst
 
-    # --- Response contents
+    # --- Responses: Things
 
     ThingFound:
-      description: A union of all possible things that can be found by a query.
+      title: ThingFound
+      description: Something returned by a query, e.g. a page, comment, or user.
       type: object
       #oneOf:
       #  - $ref: '#/components/schemas/PageFound'
@@ -559,6 +1058,7 @@ components:
     # --- Request, response objects
 
     ErrCodeMsg:
+      title: ErrCodeMsg
       type: object
       description: Error code and message.
       properties:
