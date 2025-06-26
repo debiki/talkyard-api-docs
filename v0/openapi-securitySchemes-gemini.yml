@@ -1,0 +1,238 @@
+# Gemini created, given this promps:
+# ------------------
+# Can you write an OpenAPI 3.1 spec for authenticating when making API requests to Talkyard (forum software)? More info below. And add 1) a sample GET endpoint, as brief as possible (make something up), and 2) a sample POST, that both use this way of authenticating. And 3) a POST that does *not* need authentication. And 4) a 4th endpoint: a POST that doesn't need authentication, _but_ if you _are_ logged in, more stuff is included in the server's response.
+# 
+# Here (the rest of this message) follows the text about how to authenticate:
+# 
+# ---
+# 
+# To use non-public parts of the API, you need to generate an API secret: Go to `https:// your talkyard site /-/admin/settings/features` and click Enable API and save the settings. Now, the API tab appears — go there and generate an API secret.
+# 
+# Note that this API secret is very secret — don't send it in emails to anyone, don't share it with anyone.
+# 
+# Then, when doing API requests from your server to Talkyard's API, include an Authorization header:
+# 
+# `Authorization: Basic BASE64_TEXT`
+# 
+# where BASE64_TEXT is: `tyid=2:API_SECRET` but base64 encoded. "tyid" means Talkyard ID, and 2 is the Sysbot user id.
+# 
+# So, `tyid=2` means that the API request is being done as the Sysbot user (Sysbot is a Talkyard user intended for API requests. There's also a System user with id 1 but it cannot do API requests).
+# 
+# And API_SECRET is the API secret you generated in the API tab.
+# ---/ end promp ---
+
+openapi: 3.1.0
+info:
+  title: Talkyard API
+  version: "1.0.0"
+  description: |
+    An example API specification for Talkyard forum software,
+    demonstrating custom Basic authentication and various endpoint security requirements.
+servers:
+  - url: "https://{your_talkyard_site}/-/v0"
+    variables:
+      your_talkyard_site:
+        default: "community.example.com"
+        description: "Your Talkyard site domain."
+
+components:
+  securitySchemes:
+    talkyardApiAuth:
+      type: http
+      scheme: basic
+      description: |
+        To authenticate, provide a `Basic` Authorization header.
+        The value is a base64 encoding of the string `tyid=2:API_SECRET`.
+
+        For example, if your API secret is `MySecret123`, you would base64-encode `tyid=2:MySecret123`.
+        The resulting `Authorization` header would be: `Authorization: BasicdHlpZD0yOk15U2VjcmV0MTIz`
+
+  schemas:
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "post-abc-123"
+        author:
+          type: string
+          example: "user-xyz-789"
+        content:
+          type: string
+          example: "This is the content of the post."
+        createdAt:
+          type: string
+          format: date-time
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "comment-def-456"
+        author:
+          type: string
+          example: "user-lmn-456"
+        text:
+          type: string
+          example: "This is a great comment!"
+        createdAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+
+paths:
+  # 1. A sample GET endpoint that requires authentication
+  /posts/{postId}:
+    get:
+      summary: Get a Single Post
+      description: Retrieves the details of a specific post. Requires authentication.
+      operationId: getPostById
+      tags:
+        - Posts
+      security:
+        - talkyardApiAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          description: The ID of the post to retrieve.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved the post.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '401':
+          description: Unauthorized. API key is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Post not found.
+
+  # 2. A sample POST endpoint that requires authentication
+  /posts/{postId}/comments:
+    post:
+      summary: Add a Comment to a Post
+      description: Creates a new comment on a specified post. Requires authentication.
+      operationId: addCommentToPost
+      tags:
+        - Comments
+      security:
+        - talkyardApiAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          description: The ID of the post to comment on.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  description: The content of the comment.
+                  example: "I agree with this post!"
+      responses:
+        '201':
+          description: Comment created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '401':
+          description: Unauthorized. API key is missing or invalid.
+        '404':
+          description: Post not found.
+
+  # 3. A sample POST endpoint that does NOT need authentication
+  /public/search:
+    post:
+      summary: Public Search
+      description: Performs a public search across the forum. No authentication is needed.
+      operationId: publicSearch
+      tags:
+        - Public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: The search term.
+                  example: "open source"
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Post'
+
+  # 4. A POST that doesn't need authentication, but provides more data if you are.
+  /posts/{postId}/view:
+    post:
+      summary: Record a Post View
+      description: |
+        Records a view for a post. This endpoint can be called anonymously.
+        However, if authenticated, the response will include additional user-specific data,
+        such as whether the user has liked the post.
+      operationId: recordPostView
+      tags:
+        - Posts
+      # The security field allows for both no-auth and talkyardApiAuth
+      security:
+        - {} # Indicates no auth is required
+        - talkyardApiAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          description: The ID of the post being viewed.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: View recorded. The response varies based on authentication.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "view recorded"
+                  # This field only appears if the user is authenticated
+                  userContext:
+                    type: object
+                    properties:
+                      hasLiked:
+                        type: boolean
+                        example: true
+                      hasBookmarked:
+                        type: boolean
+                        example: false
+                    description: "User-specific context, present only if authenticated."
+        '404':
+          description: Post not found.
+
