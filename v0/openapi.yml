@@ -7,7 +7,7 @@ info:
     First, enable the API. Go to `https:// your talkyard site /-/admin/settings/features`
     and click **Enable API** and save the settings. 
 
-    There's these API endpoints: `/-/v0/get`, `list`, `query`, `do`, `query-do`,
+    There's these API endpoints: `/-/v0/get`, `list`, `search`, `query`, `do`,
     to which you send POST requests, and json in the payload that describes what
     you want to get, list, or do.
     &thinsp; And webhooks.<!-- They let you fetch specific things if you
@@ -276,6 +276,57 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+webhooks:
+  # This is a 'paths:' object like the ones above, but the request is sent by Talkyard.
+  events:
+    post:
+      description: |
+        Sent from Talkyard to your server.
+        Triggered when a page or comment is created or updated,
+        or a new user joins. — Later, there'll be more event types.
+
+        To fetch old events (e.g. to catch up if your server was offline), you
+        can use `/-/v0/list` and `listWhat: 'Events'`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEventsPayload'
+            examples:
+              PostCreatedExample:
+                value:
+                  events:
+                    - id: 3
+                      atMs: 1751005851848
+                      eventData:
+                        post:
+                          id: 109
+                          nr: 2
+                          refId: "commentOne refId"
+                          author:
+                            id: 102
+                            fullName: "Memah"
+                            username: "memah"
+                          pageId: "2"
+                          urlPath: "/-2#post-2"
+                          parentNr: 1
+                          pageRefId: "page_one_ref_id"
+                          pageTitle: "Page One Title"
+                          categoriesMainFirst:
+                            - id: 2
+                              name: "CategoryA"
+                              refId: "categoryARefId"
+                              urlPath: "/latest/category-a"
+                          approvedHtmlSanitized:
+                            "<p>replyOneBody Hello Maja, such good ideas! So many</p>\n"
+                      eventType: "PostCreated"
+                  origin: "http://e2e-test-cid-0-0-now-0581.localhost"
+      responses:
+        '200':
+          description: Webhook successfully processed
+
+
 components:
   securitySchemes:
     TyBasicAuth:
@@ -409,6 +460,7 @@ components:
           oneOf:
             - $ref: '#/components/schemas/ListPagesQuery'
             - $ref: '#/components/schemas/ListPatsQuery'
+            - $ref: '#/components/schemas/ListEventsQuery'
         limit:
           type: integer
       required:
@@ -446,8 +498,7 @@ components:
       title: ListPagesQuery
       type: object
       #allOf:
-      #  # - $ref: '#/components/schemas/ListThingsQuery'
-      #  - type: object
+      #  - $ref: '#/components/schemas/ListThingsQuery'
       properties:
         listWhat:
           type: string
@@ -463,8 +514,7 @@ components:
       title: ListParticipantsQuery
       type: object
       #allOf:
-      #  #- $ref: '#/components/schemas/ListThingsQuery'
-      #  - type: object
+      #  - $ref: '#/components/schemas/ListThingsQuery'
       properties:
         listWhat:
           type: string
@@ -475,6 +525,21 @@ components:
           $ref: '#/components/schemas/PatFilter'
         # sortOrder:
         #   $ref: '#/components/schemas/??'
+
+    ListEventsQuery:
+      title: ListEventsQuery
+      type: object
+      #allOf:
+      #  - $ref: '#/components/schemas/ListThingsQuery'
+      properties:
+        listWhat:
+          type: string
+          const: 'Events'
+        # Not impl for events:
+        # inclFields: $ref: '#/components/schemas/InclEventFields'
+        # filter: $ref: '#/components/schemas/EventFilter'
+        sortOrder:
+          $ref: '#/components/schemas/NewestOldestSortOrder'
 
     ListThingsApiResponse:  # very similar, _list_search_resp
       description: An array with found things.
@@ -716,7 +781,9 @@ components:
         howMany:
           type: integer
           enum: [0, 1]
-          description: 0 clears any votes (by the same person), 1 adds a vote.
+          description: >
+            0 clears any votes (by the `asWho` person).
+            1 sets the number of votes by `asWho` to 1.
         whatPage:
           $ref: '#/components/schemas/PageRef'
         postNr:
@@ -847,6 +914,59 @@ components:
           description: Timestamp in milliseconds.
 
     # -- / _Actions -------------
+
+    #-------------------------------------------------------------------
+    # Webhooks
+    #-------------------------------------------------------------------
+
+    WebhookEventsPayload:
+      type: object
+      properties:
+        events:
+          type: array
+          description: A list of events that occurred.
+          items:
+            $ref: '#/components/schemas/WebhookEvent'
+        origin:
+          type: string
+          format: uri
+          description: The base URL from which the event originated.
+      required:
+        - events
+        - origin
+
+    WebhookEvent:
+      type: object
+      description: Details of a single event within the webhook payload.
+      properties:
+        id:
+          type: integer
+          description: Event id, unique per Talkyard site.
+        atMs:
+          type: integer
+          format: int64
+          description: Timestamp of when the event occurred, in milliseconds since epoch.
+          example: 1751005851848
+        eventData:
+          type: object
+          description: OpenAPI spec for event data not yet added.
+          #oneOf:
+          #  - $ref: '#/components/schemas/PostCreatedEventData'
+        eventType:
+          type: string
+          description: The type of event that occurred (e.g., "PostCreated").
+          enum:
+            - PageCreated
+            - PageUpdated
+            - PostCreated
+            - PostUpdated
+            - PatCreated
+            # - PatUpdated
+      required:
+        - id
+        - atMs
+        - eventData
+        - eventType
 
     #-------------------------------------------------------------------
     # Models
@@ -1026,7 +1146,7 @@ components:
         - ActiveFirst
         - NewestFirst
 
-    EventSortOrder:
+    NewestOldestSortOrder:
       type: string
       enum:
         - NewestFirst
