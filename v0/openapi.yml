@@ -14,9 +14,21 @@ info:
     have references to them already (e.g. page ids or usernames).
     And let you list things, say, pages in a category or users in a group.
     And lets you make changes, e.g. create pages or add users. -->
+    <br/>
+
+    But why a single `/-/v0/do` for all API actions, instead of one
+    endpoint per action? — Because
+    then you can do all actions in a single database transaction.
+    <!-- Likewise, with
+    `/-/v0/query` — you'll be able to run many queries in the same transaction.
+    # Let's not mention, too wordy? -->
+    <br/>
+
+    ## Authentication
 
     To access restricted parts of your site, you need an API secret:
-    Go to the **API** tab in the admin area (it'll be visible once you've enabled the API),
+    Go to the **API** tab in the admin area
+    (it'll be visible once you've enabled the API, see above),
     and generate a secret.
 
     Don't share the API secret with others! Don't send it emails or chat messages
@@ -332,10 +344,11 @@ components:
     TyBasicAuth:
       type: http
       scheme: basic
-      description: |
-        Generate an API secret at: `https:// your talkyard site /-/admin/api/`.
-        Then, as Basic Authorization username:password, use
-        `tyid=2:API_SECRET`. "tyid" means Talkyard ID, and 2 is the Sysbot user id.
+      description: >
+          As username:password, use&thinsp; `tyid=2:API_SECRET`. Generate a secret at:&thinsp;
+          `https://your talkyard site/-/admin/api/`
+        #Then, as Basic Authorization username:password, use
+        #`tyid=2:API_SECRET`. "tyid" means Talkyard ID, and 2 is the Sysbot user id.
 
   schemas:
 
