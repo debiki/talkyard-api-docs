@@ -4,6 +4,9 @@ info:
   title: Talkyard API Documentation
   version: v0
   description: |
+    WARNING: We haven't double checked that this API documentation is accurate!
+    Things might not work precisely as described here, as of July 2025. Anyway,
+
     First, enable the API. Go to `https:// your talkyard site /-/admin/settings/features`
     and click **Enable API** and save the settings. 
 
