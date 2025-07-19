@@ -1,17 +1,85 @@
 Multiple Websites
 =================
 
+A single Talkyard site can show comments for many blogs and websites.
 
-You can use a sinlge Talkyard site for more than one website or blog.
+A commenter will have the same user account and username across all those blogs
+and websites. And, if you use your Talkyard site as a discussion forum too
+(accessible at say `https://forum.example.com`), s/he would have the same username
+there too.
 
-For example, let's say you have documentation website at `docs.example.com`, 
-and you want to let people post comments and ask about the docs.
+Let's say you have a blog at `blog.example.com`,
+another blog at `blog.sub.example.com`,
+and a documentation website at `docs.example.com`,
+and you want people to post comments and ask questions about your blog posts and docs.
 
-And you have a blog at `blog.example.com`, and a third blog at `blog.sub.example.com`.
+To make this work, then, as admin for your Talkyard site:
 
-To make this work, you need to configure **Allow embedding from**
-and list all your domains where you'll embed Talkyard comments.
+1. Go to **Settings | Features**, here: `http:// your talkyard site /-/admin/settings/features`,
+
+    1. Tick **Enable API**. This let's you specify reference IDs in the create-category
+        dialog (see below).
+
+    1. Tick **Enable discussion forum** _(note: cannot be undone, but doesn't matter,
+        just makes category and tags related buttons visible in the user interface
+        if accessing your Talkyard site directly. But not for blog commenters)_.
+        — This lets you create _categories_, so you can put comments from different websites,
+        in different categories, and have some order.
+
+    1.  If you want, de-select tags, chat, direct messages. You only need API and categories.
+    1.  Click **Save**.
+
+1. Create categories. Click **Back from Admin Area** at the top,
+    then click **View categories** below the site title.
+    Click **Create Category** to the right.
+    In our example, we'd create these: "Blog Comments", "Sub Blog comments",
+    and "Docs Comments".
+
+    Also click **External ID** at the bottom of the Create Category dialog,
+    and type a reference id,
+    so you can reference these categories from your websites.
+    In our example, we could pick IDs `blog_comments`, `sub_blog_comments`
+    and `docs_comments`. (Anything that works for you.)
+
+1. Go to **Settings | Embedded Comments**, here: `/-/admin/settings/embedded-comments`
+    and, in **Allow embedding from**,
+    type the domains where you'll embed Talkyard comments.
+    In our examlpe, that'd be:
+
+    ```
+    https://blog.example.com
+    https://blog.sub.example.com
+    https://docs.example.com
+    ````
+
+1. For each blog or website where you're adding comments, select the blogging
+    platform you use, in the **Which blog do you use? Or static site generator?**
+    section. These buttons don't do anything except for showing different
+    instructions. It's fine to use different blogging platforms, for different
+    blogs and websites of yours.
+
+    When you add the embedding code snippets, also add a `data-category` attribute,
+    and set it to `rid:REFERENCE_ID`, where the REFERENCE_ID is one of the IDs
+    you specified above (`blog_comments`, `sub_blog_comments`
+    and `docs_comments` in our example). — This tells Talkyrad to place comments
+    from [the website you're configuring] in the category with reference ID `REFERENCE_ID`.
+
+    Here's how it can look:
+    <pre>{`<div class="talkyard-comments"
+          `}<b>{`data-category="rid:sub_blog_comments"`}</b>{`
+          data-discussion-id="{{comment_id}}">`}</pre>
+
+    (That's with Ghost as blogging platform — Ghost wants the discussion id specified as
+    `{{comment_id}}`, the last line above. But the `data-category=...` is the same,
+    regardless of what platform you use.)
+
+1. Redeploy your blogs and websites to activate the blog comments HTML.
 
 
+That should be it. Post a test comment on each website and see what happens.
+
+<!-- Q&A long ago:
 https://forum.talkyard.io/-504/different-category-per-site-for-embedded-comments
+-->
+
 
