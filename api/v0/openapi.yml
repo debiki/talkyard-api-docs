@@ -4,8 +4,8 @@ info:
   title: Talkyard API Documentation
   version: v0
   description: |
-    WARNING: We haven't double checked that this API documentation is accurate!
-    Things might not work precisely as described here, as of July 2025. Anyway,
+    <i><b>WARNING</b>: We haven't double checked that this API documentation is accurate!
+    Things might not work precisely as described here, as of July 2025.</i>
 
     First, enable the API. Go to `https:// your talkyard site /-/admin/settings/features`
     and click **Enable API** and save the settings. 
@@ -295,13 +295,31 @@ webhooks:
   # This is a 'paths:' object like the ones above, but the request is sent by Talkyard.
   events:
     post:
+      # Nice authn docs & approach?:  (found by websearching for "webhook authentication")
+      #   https://developer.zendesk.com/documentation/webhooks/webhook-security-and-authentication/
+      # Nice paragraph about all the dangers:
+      #   https://hookdeck.com/webhooks/guides/what-are-the-webhook-authentication-strategies#how-do-you-secure-a-webhook
       description: |
-        Sent from Talkyard to your server.
-        Triggered when a page or comment is created or updated,
+        Webhooks are partly implemented: Authentication is lacking, see below.
+
+        To use webhooks first enable the API.
+        As admin, go to `https:// your talkyard site /-/admin/settings/features`
+        and click Enable API.
+
+        Then, go to `/-/admin/api` and type a webhook endpoint at your server.
+        <b>NOTE<b/>: Make the URL path long and unguessable! Include what is
+        in effect an API secret, in the URL path to your webhook endpoint.
+        Later, you'll be able to configure some API secret that will get sent
+        in a header instead.
+
+        This webhook is triggered (that is, the Talkyard server sends a HTTP request
+        to your server)
+        when a page or comment is created or updated,
         or a new user joins. — Later, there'll be more event types.
 
-        To fetch old events (e.g. to catch up if your server was offline), you
-        can use `/-/v0/list` and `listWhat: 'Events'`.
+        To fetch old events, e.g. to catch up if your server was offline, you
+        can use `/-/v0/list` and `listWhat: 'Events'`. (That is, your server sends
+        a request to the Talykard server, and gets back a list of old events.)
       requestBody:
         required: true
         content:
